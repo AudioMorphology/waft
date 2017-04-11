@@ -41,12 +41,20 @@ Adafruit_VL6180X vl = Adafruit_VL6180X();
 mcp4728 dac = mcp4728(0); // instantiate mcp4728 object, Device ID = 0
 uint16_t buff[50];
 uint8_t write_ptr = 0;
-int p_gate1 = 12;     // Gate 1 is triggered when ANY range signal is detected
-int p_gate2 = 11;     // gate 2 is triggered by MOVEMENT
-int p_quantize = 10;  // Internal Pullup, pulled low by external jumper
-int p_invert = 9;     // Internal Pullup, pulled low by external jumper
+int p_gate1 = 2;     // Gate 1 is triggered when ANY range signal is detected
+int p_gate2 = 3;     // gate 2 is triggered by MOVEMENT (ie changes in Range)
+int p_quantize = 11;  // Temp - no longer used
+int p_invert = 6;     // Internal Pullup, pulled low by external jumper
+int p_A0 = 7;
+int p_A1 = 8;
+int p_A2 = 9;
+int p_A3 = 10;
 int quantize = HIGH;
+int BCD = 0;
+int LastBCD = 0;
 float prev_av = 0;
+unsigned long lastDebounceTime = 0;  
+unsigned long debounceDelay = 100;    
 
 void setup()
 {
@@ -54,6 +62,10 @@ void setup()
   pinMode(p_gate2, OUTPUT);
   pinMode(p_quantize, INPUT_PULLUP);
   pinMode(p_invert, INPUT_PULLUP);
+  pinMode(p_A0,INPUT_PULLUP);
+  pinMode(p_A1,INPUT_PULLUP);
+  pinMode(p_A2,INPUT_PULLUP);
+  pinMode(p_A3,INPUT_PULLUP);
   Serial.begin(9600);  // initialize serial interface for print()
   dac.begin();  // initialize i2c interface
   dac.vdd(5000); // set VDD(mV) of MCP4728 for correct conversion between LSB and Vout
@@ -61,6 +73,7 @@ void setup()
     Serial.println("Failed to find VL6180X Sensor");
     while (1);
   }
+   Serial.println("Waft.cpp");
   Serial.println("VL6180x Sensor found!");
   dac.setVref(1,1,1,1); // set to use internal voltage reference (2.048V)
   dac.setGain(0, 0); // set the gain of internal voltage reference ( 2.048V x 2 = 4.096V )
@@ -79,6 +92,24 @@ void loop()
   int invert = digitalRead(p_invert);
   uint8_t range = vl.readRange();
   uint8_t status = vl.readRangeStatus();
+
+  int NewBCD = (digitalRead(p_A3) * 8) + (digitalRead(p_A2) * 4) + (digitalRead(p_A1) * 2) + digitalRead(p_A0);
+  if(NewBCD != LastBCD){
+    lastDebounceTime = millis();    
+  }
+  if ((millis() - lastDebounceTime) > debounceDelay) {
+    // whatever the reading is at, it's been there for longer
+    // than the debounce delay, so take it as the actual current state:
+    // if the BCD Rotary Switch value has changed:
+    if (NewBCD != BCD) {
+      BCD = NewBCD;
+      Serial.print("BCD: ");
+      Serial.println(BCD);
+    }
+  }
+  LastBCD = NewBCD;
+
+
   if (status == VL6180X_ERROR_NONE) {
     // Gate On
     digitalWrite(p_gate1, HIGH);

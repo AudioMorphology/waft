@@ -41,8 +41,8 @@ Adafruit_VL6180X vl = Adafruit_VL6180X();
 mcp4728 dac = mcp4728(0); // instantiate mcp4728 object, Device ID = 0
 uint16_t buff[50];
 uint8_t write_ptr = 0;
-int p_gate1 = 12;     // Gate 1 is triggered when ANY range signal is detected
-int p_gate2 = 11;     // gate 2 is triggered by MOVEMENT
+int p_gate1 = 2;     // Gate 1 is triggered when ANY range signal is detected
+int p_gate2 = 3;     // gate 2 is triggered by MOVEMENT
 int p_quantize = 10;  // Internal Pullup, pulled low by external jumper
 int p_invert = 9;     // Internal Pullup, pulled low by external jumper
 int quantize = HIGH;
@@ -65,7 +65,7 @@ void setup()
   dac.setVref(1,1,1,1); // set to use internal voltage reference (2.048V)
   dac.setGain(0, 0); // set the gain of internal voltage reference ( 2.048V x 2 = 4.096V )
   dac.setGain(1, 1); // set the gain of internal voltage reference ( 2.048V x 2 = 4.096V )
-  
+  Serial.println("Waft.ino");
   printStatus(); // Print all internal value and setting of input register and EEPROM. 
 }
 
@@ -75,6 +75,7 @@ void loop()
   float av_val;
   float no_quant;
   int prev_q = quantize;
+  Serial.println("Loop");
   quantize = digitalRead(p_quantize);
   int invert = digitalRead(p_invert);
   uint8_t range = vl.readRange();
@@ -103,10 +104,10 @@ void loop()
     }
     av_val = av_val/SMOOTHING;
     no_quant = av_val;
-/*    Serial.print("Prev Av: ");
+    Serial.print("Prev Av: ");
     Serial.print(prev_av);
     Serial.print(" Average: ");
-    Serial.println(av_val);*/
+    Serial.println(av_val);
     // State of the Quantize pin determines whether
     // to quantize Channel 1 output or not
     if(quantize == LOW){
