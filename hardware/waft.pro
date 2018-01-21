@@ -1,4 +1,4 @@
-update=14/01/2018 10:03:30
+update=Fri 19 Jan 2018 10:56:58 GMT
 version=1
 last_client=kicad
 [pcbnew]
@@ -37,7 +37,7 @@ SpiceUseNetNumbers=0
 LabSize=60
 [eeschema]
 version=1
-LibDir=../europi_library;F:/Dev/Europi/kicad/europi_library
+LibDir=../../Europi/kicad/europi_library
 [eeschema/libraries]
 LibName1=waft-rescue
 LibName2=power
@@ -69,6 +69,9 @@ LibName27=opto
 LibName28=atmel
 LibName29=contrib
 LibName30=valves
-LibName31=VL6180x_Composite
-LibName32=arduino_nano_v3
-LibName33=europi
+LibName31=/home/administrator/dev/Europi/kicad/europi_library/arduino_nano_v3
+LibName32=/home/administrator/dev/Europi/kicad/europi_library/device
+LibName33=/home/administrator/dev/Europi/kicad/europi_library/europi
+LibName34=/home/administrator/dev/Europi/kicad/europi_library/switch-enc
+LibName35=/home/administrator/dev/Europi/kicad/europi_library/switch_spdt
+LibName36=/home/administrator/dev/Europi/kicad/europi_library/VL6180x_Composite

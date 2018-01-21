@@ -29,10 +29,11 @@ LIBS:opto
 LIBS:atmel
 LIBS:contrib
 LIBS:valves
-LIBS:VL6180x_Composite
 LIBS:arduino_nano_v3
 LIBS:europi
-LIBS:waft-cache
+LIBS:switch-enc
+LIBS:switch_spdt
+LIBS:VL6180x_Composite
 EELAYER 25 0
 EELAYER END
 $Descr A4 11693 8268
@@ -298,7 +299,7 @@ F 3 "" H 2900 1200 50  0000 C CNN
 	0    1    1    0   
 $EndComp
 $Comp
-L CONN_01X01 J2
+L Conn_01x01 J2
 U 1 1 58DF4BCD
 P 3300 900
 F 0 "J2" H 3300 1000 50  0000 C CNN
@@ -1008,7 +1009,7 @@ GATE_1a
 Text GLabel 3700 1700 0    60   Output ~ 0
 GATE_2a
 $Comp
-L TL071-RESCUE-waft U2
+L TL071 U2
 U 1 1 58E45B02
 P 6250 2600
 F 0 "U2" H 6250 2850 50  0000 L CNN
@@ -1349,7 +1350,7 @@ Wire Wire Line
 	9350 1750 9350 1700
 Connection ~ 9350 1700
 $Comp
-L CONN_01X02 J1
+L Conn_01x02 J1
 U 1 1 58E5D701
 P 1000 1200
 F 0 "J1" H 1000 1350 50  0000 C CNN
