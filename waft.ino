@@ -1,4 +1,4 @@
-// Copyright 2016 Richard R. Goodwin / Audio Morphology
+// Copyright 2016 Richard R. Goodwin / Audio Morphology.
 //
 // Author: Richard R. Goodwin (richard.goodwin@morphology.co.uk)
 //
