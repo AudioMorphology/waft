@@ -20,4 +20,4 @@ In addition, a CV Input can be mixed with a variable amount of CV1, thus the Waf
 
 The hardware design (Schematics & Gerbers) are released under the Opensource Hardware, and the Software is available under a Creative Commons / MIT license.
 
-All documentation is held in the [Wiki](wiki)
+All documentation is held in the Wiki
