@@ -5,7 +5,7 @@ Eurorack Gesture Controller
 
 Waft is a LIDAR-based gesture controller in Eurorack format.
 
-It is based around the VL6180x Time Of Flight controller, which measures distances by firing out a low-power laser, and recording the round-trip (Time Of Flight) delay. So, maybe 'gesture' perhaps overstates it slightly - it doesn't recognise gestures such as swipe up, swipe down etc., though it _**does**_ measure distance with mm accuracy over a distance of 20cm or thereabouts.... 
+It is based around the VL6180x Time Of Flight controller, which measures distances using an Infra-red emitter but, unlike most IR distance measuring devices, which estimate distance based on reflected signals, the VL6180x measures the actual round-trip (Time Of Flight) delay. So, maybe 'gesture' perhaps overstates it slightly - it doesn't recognise gestures such as swipe up, swipe down etc., though it _**does**_ measure distance with mm accuracy over a distance of 20cm or thereabouts.... 
 
 Waft utilises the widely-available Arduino Nano V3 board as its processing platform, and mcp4728 12-Bit DACs for the CV Outputs.
 
