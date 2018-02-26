@@ -20,6 +20,6 @@ Waft generates two CV and two Gate outputs:
 
 In addition, a CV Input can be mixed with a variable amount of CV1, thus the Waft controller can be used to modulate a CV input.
 
-The hardware design (Schematics & Gerbers) are released under the Opensource Hardware, and the Software is available under a Creative Commons / MIT license.
+The hardware design (Schematics & Gerbers) are released under the Open Source Hardware Association (UID UK000005), and the Software is available under a Creative Commons / MIT license.
 
 All documentation is held in the Wiki
