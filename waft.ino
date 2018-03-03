@@ -26,11 +26,13 @@
 #line 1 "waft.ino"
 
 #include "Arduino.h"
+#include "vl6180x_api.h"
 void setup();
 void loop();
 #line 4
 void printStatus();
 int quantize_val(int, int, int);
+void log_msg(const char*, ...);
 
 #include <Wire.h>
 #include "mcp4728.h"
@@ -46,11 +48,13 @@ int p_gate1 = 2;     // Gate 1 is triggered when ANY range signal is detected
 int p_gate2 = 3;     // gate 2 is triggered by MOVEMENT
 int p_invert = 6;     // Internal Pullup, pulled low by external jumper
 int p_intonation = 5; // Internal pullup, pulled low by external jumper (sets intonation to Just or Equal)
+int p_debug = 4;      // Pin indicates whether to transmit debug messages
 int p_D0 = 7;
 int p_D1 = 8;
 int p_D2 = 9;
 int p_D3 = 10;
 int quantize = 0;
+int debug = 1;
 float prev_av = 0;
 
 void setup()
@@ -59,21 +63,23 @@ void setup()
   pinMode(p_gate2, OUTPUT);
   pinMode(p_invert, INPUT_PULLUP);
   pinMode(p_intonation, INPUT_PULLUP);
+  pinMode(p_debug, INPUT_PULLUP);
   pinMode(p_D0, INPUT_PULLUP);
   pinMode(p_D1, INPUT_PULLUP);
   pinMode(p_D2, INPUT_PULLUP);
   pinMode(p_D3, INPUT_PULLUP);
   Serial.begin(9600);  // initialize serial interface for print()
+  //NOTE: Always print copyright to the Serial port - don't use the log_msg() wrapper
   Serial.println("Waft by Audio Morphology");
   Serial.println("Copyright 2016 Richard R. Goodwin / Audio Morphology.");
   Serial.println(" ");
   dac.begin();  // initialize i2c interface
   dac.vdd(5000); // set VDD(mV) of MCP4728 for correct conversion between LSB and Vout
   if (! vl.begin()) {
-    Serial.println("Failed to find VL6180X Sensor\n");
+    log_msg("Failed to find VL6180X Sensor\n\r");
     while (1);
   }
-  Serial.println("VL6180x Sensor found!\n");
+  log_msg("VL6180x Sensor found!\n\r");
   dac.setVref(1,1,1,1); // set to use internal voltage reference (2.048V)
   dac.setGain(0, 0); // set the gain of internal voltage reference ( 2.048V x 2 = 4.096V )
   dac.setGain(1, 1); // set the gain of internal voltage reference ( 2.048V x 2 = 4.096V )
@@ -87,6 +93,7 @@ void loop()
   float no_quant;
   int invert = digitalRead(p_invert);
   int intonation = digitalRead(p_intonation);
+  debug = digitalRead(p_debug);
   int D0 = digitalRead(p_D0);
   int D1 = digitalRead(p_D1);
   int D2 = digitalRead(p_D2);
@@ -98,19 +105,22 @@ void loop()
   if(D3 == 0) quantize += 8;
   if((quantize < 0) || (quantize > 9)) quantize = 0;
   uint8_t range = vl.readRange();
+  if(range != 255) log_msg("Range: %d\n\r",range);
   uint8_t status = vl.readRangeStatus();
   if (status == VL6180X_ERROR_NONE) {
     // Gate On
     digitalWrite(p_gate1, HIGH);
-    // Range values are likely to be approx 50 - 200
-    if(range >= 200){
-      range = 200;
-    }
+    // Range values are likely to be approx 15 - 190
+    // but treat the useable range as 15 - 175
+    // so scale these to a 0 - 4000 value
+    if(range > 15){range -= 15;} else {range = 0;}
+    if(range > 160){range = 160;}
+    //log_msg("Range: %d\n\r",range);
     if(invert == LOW){
-      buff[write_ptr] = (200-range)*20;
+      buff[write_ptr] = (160-range)*25;
     }
     else {
-      buff[write_ptr] = (range)*20;
+      buff[write_ptr] = (range)*25;
     }
     if(write_ptr++ >= SMOOTHING) { 
       write_ptr = 0;
@@ -123,11 +133,8 @@ void loop()
     }
     av_val = av_val/SMOOTHING;
     no_quant = av_val;
-    //Serial.print("Prev Av: ");
-    //Serial.print(prev_av);
-    //Serial.print(" Average: ");
-    //Serial.println(av_val);
     
+    // Quantise appropriately
     av_val = quantize_val(av_val, quantize, intonation);
 
     // DAC Channel 1 = 2 Octave range, quantised where necessary
@@ -142,42 +149,51 @@ void loop()
       digitalWrite(p_gate2, LOW); 
     }
   }
-  else if (status == VL6180X_ERROR_NOCONVERGE) {
-     range = 200;
+  else {
+     // basically treat all returned values other 
+     // than VL6180X_ERROR_NONE as no signal, so gate off
      digitalWrite(p_gate1, LOW); 
      digitalWrite(p_gate2, LOW);
   }
+//#define VL6180X_ERROR_NONE         0   ///< Success!
+//#define VL6180X_ERROR_SYSERR_1     1   ///< System error
+//#define VL6180X_ERROR_SYSERR_5     5   ///< Sysem error
+//#define VL6180X_ERROR_ECEFAIL      6   ///< Early convergence estimate fail  
+//#define VL6180X_ERROR_NOCONVERGE   7   ///< No target detected
+//#define VL6180X_ERROR_RANGEIGNORE  8   ///< Ignore threshold check failed
+//#define VL6180X_ERROR_SNR          11  ///< Ambient conditions too high
+//#define VL6180X_ERROR_RAWUFLOW     12  ///< Raw range algo underflow
+//#define VL6180X_ERROR_RAWOFLOW     13  ///< Raw range algo overflow
+//#define VL6180X_ERROR_RANGEUFLOW   14  ///< Raw range algo underflow
+//#define VL6180X_ERROR_RANGEOFLOW   15  ///< Raw range algo overflow
 }
 
 void printStatus()
 {
-  Serial.println("NAME     Vref  Gain  PowerDown  Value");
+  log_msg("NAME     Vref  Gain  PowerDown  Value\n");
   for (int channel=0; channel <= 3; channel++)
-  { 
-    Serial.print("DAC");
-    Serial.print(channel,DEC);
-    Serial.print("   ");
-    Serial.print("    "); 
-    Serial.print(dac.getVref(channel),BIN);
-    Serial.print("     ");
-    Serial.print(dac.getGain(channel),BIN);
-    Serial.print("       ");
-    Serial.print(dac.getPowerDown(channel),BIN);
-    Serial.print("       ");
-    Serial.println(dac.getValue(channel),DEC);
-
-    Serial.print("EEPROM");
-    Serial.print(channel,DEC);
-    Serial.print("    "); 
-    Serial.print(dac.getVrefEp(channel),BIN);
-    Serial.print("     ");
-    Serial.print(dac.getGainEp(channel),BIN);
-    Serial.print("       ");
-    Serial.print(dac.getPowerDownEp(channel),BIN);
-    Serial.print("       ");
-    Serial.println(dac.getValueEp(channel),DEC);
+  {  
+    log_msg("DAC%d       %d     %d       %d       %d\n\r",channel,dac.getVref(channel),dac.getGain(channel),dac.getPowerDown(channel),dac.getValue(channel));
+    log_msg("EEPROM%d    %d     %d       %d       %d\n\r",channel,dac.getVrefEp(channel),dac.getGainEp(channel),dac.getPowerDownEp(channel),dac.getValueEp(channel));
   }
-  Serial.println(" ");
+  log_msg(" \n\r");
+}
+
+// Wrapper for the Serial.print function that
+// enables us to turn off debug messages. This
+// is simply because the overhead of writing
+// debug messages to the serial port slows down
+// the main program loop
+void log_msg(const char* format, ...)
+{
+   char buf[128];
+  if (debug == 1){
+  va_list args;
+  va_start(args, format);
+  vsnprintf(buf, sizeof(buf), format, args);
+  Serial.print(buf);
+  va_end(args);
+  }
 }
 
 // Qantizes the passed input value
@@ -186,6 +202,7 @@ void printStatus()
 // (Equal temperament or Just Intonation)
 int quantize_val(int in_val, int scale, int intonation){
   int retval;
+  //log_msg("In val: %d\n\r",in_val);
   switch(intonation){
     // Just Intonation
     case 0:
@@ -197,79 +214,79 @@ int quantize_val(int in_val, int scale, int intonation){
         case 1:
           // Chromatic (Just Intonation)
           switch(in_val){
-            case 0 ... 162:
+            case 0 ... 159:
                 retval = 0;
                 break;
-            case 163 ... 325:
+            case 160 ... 319:
                 retval = 150;
                 break;
-            case 326 ... 488:
+            case 320 ... 479:
                 retval = 340;
                 break;
-            case 489 ... 651:
+            case 480 ... 639:
                 retval = 490;
                 break;
-            case 652 ... 814:
+            case 640 ... 799:
                 retval = 680;
                 break;
-            case 815 ... 977:
+            case 800 ... 959:
                 retval = 830;
                 break;
-            case 978 ... 1140:
+            case 960 ... 1119:
                 retval = 980;
                 break;
-            case 1141 ... 1303:
+            case 1120 ... 1279:
                 retval = 1170;
                 break;
-            case 1304 ... 1466:
+            case 1280 ... 1439:
                 retval = 1320;
                 break;
-            case 1467 ... 1629:
+            case 1440 ... 1599:
                 retval = 1510;
                 break;
-            case 1630 ... 1792:
+            case 1600 ... 1759:
                 retval = 1660;
                 break;
-            case 1793 ... 1955:
+            case 1760 ... 1919:
                 retval = 1850;
                 break;
-            case 1956 ... 2118:
+            case 1920 ... 2079:
                 retval = 2000;
                 break;
-            case 2119 ... 2281:
+            case 2080 ... 2239:
                 retval = 2150;
                 break;
-            case 2282 ... 2444:
+            case 2240 ... 2399:
                 retval = 2340;
                 break;
-            case 2445 ... 2607:
+            case 2400 ... 2559:
                 retval = 2490;
                 break;
-            case 2608 ... 2770:
+            case 2560 ... 2719:
                 retval = 2680;
                 break;
-            case 2771 ... 2933:
+            case 2720 ... 2879:
                 retval = 2830;
                 break;
-            case 2934 ... 3096:
+            case 2880 ... 3039:
                 retval = 2980;
                 break;
-            case 3097 ... 3259:
+            case 3040 ... 3199:
                 retval = 3170;
                 break;
-            case 3260 ... 3422:
+            case 3200 ... 3359:
                 retval = 3320;
                 break;
-            case 3423 ... 3585:
+            case 3360 ... 3519:
                 retval = 3510;
                 break;
-            case 3586 ... 3748:
+            case 3520 ... 3679:
                 retval = 3660;
                 break;
-            case 3749 ... 3911:
+            case 3680 ... 3839:
                 retval = 3850;
                 break;
-            case 3912 ... 4096:
+            case 3840 ... 4000:
                 retval = 4000;
                 break;
           }
@@ -277,49 +294,49 @@ int quantize_val(int in_val, int scale, int intonation){
         case 2:
           // Major (Just Intonation)
           switch(in_val){
-            case 0 ... 272:
+            case 0 ... 266:
                 retval = 0;
                 break;
-            case 273 ... 545:
+            case 267 ... 533:
                 retval = 340;
                 break;
-            case 546 ... 818:
+            case 534 ... 800:
                 retval = 680;
                 break;
-            case 819 ... 1091:
+            case 801 ... 1067:
                 retval = 830;
                 break;
-            case 1092 ... 1364:
+            case 1068 ... 1334:
                 retval = 1170;
                 break;
-            case 1365 ... 1637:
+            case 1335 ... 1601:
                 retval = 1510;
                 break;
-            case 1638 ... 1910:
+            case 1602 ... 1868:
                 retval = 1850;
                 break;
-            case 1911 ... 2183:
+            case 1869 ... 2135:
                 retval = 2000;
                 break;
-            case 2184 ... 2456:
+            case 2136 ... 2402:
                 retval = 2340;
                 break;
-            case 2457 ... 2729:
+            case 2403 ... 2669:
                 retval = 2680;
                 break;
-            case 2730 ... 3002:
+            case 2670 ... 2936:
                 retval = 2830;
                 break;
-            case 3003 ... 3275:
+            case 2937 ... 3203:
                 retval = 3170;
                 break;
-            case 3276 ... 3548:
+            case 3204 ... 3470:
                 retval = 3510;
                 break;
-            case 3549 ... 3821:
+            case 3471 ... 3737:
                 retval = 3850;
                 break;
-            case 3822 ... 4096:
+            case 3738 ... 4000:
                 retval = 4000;
                 break;
           }
@@ -327,58 +344,344 @@ int quantize_val(int in_val, int scale, int intonation){
         case 3:
           // Major Pentatonic (Just Intonation)
           switch(in_val){
-            case 0 ... 371:
+            case 0 ... 363:
                 retval = 0;
                 break;
-            case 372 ... 743:
+            case 364 ... 727:
                 retval = 340;
                 break;
-            case 744 ... 1115:
+            case 728 ... 1091:
                 retval = 680;
                 break;
-            case 1116 ... 1487:
+            case 1092 ... 1455:
                 retval = 1170;
                 break;
-            case 1488 ... 1859:
+            case 1456 ... 1819:
                 retval = 1510;
                 break;
-            case 1860 ... 2231:
+            case 1820 ... 2183:
                 retval = 2000;
                 break;
-            case 2232 ... 2603:
+            case 2184 ... 2547:
                 retval = 2340;
                 break;
-            case 2604 ... 2975:
+            case 2548 ... 2911:
                 retval = 2680;
                 break;
-            case 2976 ... 3347:
+            case 2912 ... 3275:
                 retval = 3170;
                 break;
-            case 3348 ... 3719:
+            case 3276 ... 3639:
                 retval = 3510;
                 break;
-            case 3720 ... 4096:
+            case 3640 ... 4000:
                 retval = 4000;
                 break;
           }
         
           break;
         case 4:
+          // Minor Pentatonic (Just Intonation)
+          switch(in_val){
+            case 0 ... 363:
+                retval = 0;
+                break;
+            case 364 ... 727:
+                retval = 370;
+                break;
+            case 728 ... 1091:
+                retval = 667;
+                break;
+            case 1092 ... 1455:
+                retval = 1000;
+                break;
+            case 1456 ... 1819:
+                retval = 1555;
+                break;
+            case 1820 ... 2183:
+                retval = 2000;
+                break;
+            case 2184 ... 2547:
+                retval = 2370;
+                break;
+            case 2548 ... 2911:
+                retval = 2667;
+                break;
+            case 2912 ... 3275:
+                retval = 3000;
+                break;
+            case 3276 ... 3639:
+                retval = 3555;
+                break;
+            case 3640 ... 4000:
+                retval = 4000;
+                break;
+          }
         
           break;
         case 5:
-  
+          // Harmonic Minor (Just Intonation)
+          switch(in_val){
+            case 0 ... 266:
+                retval = 0;
+                break;
+            case 267 ... 533:
+                retval = 340;
+                break;
+            case 534 ... 800:
+                retval = 490;
+                break;
+            case 801 ... 1067:
+                retval = 830;
+                break;
+            case 1068 ... 1334:
+                retval = 1170;
+                break;
+            case 1335 ... 1601:
+                retval = 1320;
+                break;
+            case 1602 ... 1868:
+                retval = 1850;
+                break;
+            case 1869 ... 2135:
+                retval = 2000;
+                break;
+            case 2136 ... 2402:
+                retval = 2340;
+                break;
+            case 2403 ... 2669:
+                retval = 2490;
+                break;
+            case 2670 ... 2936:
+                retval = 2830;
+                break;
+            case 2937 ... 3203:
+                retval = 3170;
+                break;
+            case 3204 ... 3470:
+                retval = 3320;
+                break;
+            case 3471 ... 3737:
+                retval = 3850;
+                break;
+            case 3738 ... 4000:
+                retval = 4000;
+                break;
+          }
           break;
         case 6:
+          // Dorian (Just Intonation)
+          switch(in_val){
+            case 0 ... 266:
+                retval = 0;
+                break;
+            case 267 ... 533:
+                retval = 340;
+                break;
+            case 534 ... 800:
+                retval = 490;
+                break;
+            case 801 ... 1067:
+                retval = 830;
+                break;
+            case 1068 ... 1334:
+                retval = 1170;
+                break;
+            case 1335 ... 1601:
+                retval = 1510;
+                break;
+            case 1602 ... 1868:
+                retval = 1660;
+                break;
+            case 1869 ... 2135:
+                retval = 2000;
+                break;
+            case 2136 ... 2402:
+                retval = 2340;
+                break;
+            case 2403 ... 2669:
+                retval = 2490;
+                break;
+            case 2670 ... 2936:
+                retval = 2830;
+                break;
+            case 2937 ... 3203:
+                retval = 3170;
+                break;
+            case 3204 ... 3470:
+                retval = 3510;
+                break;
+            case 3471 ... 3737:
+                retval = 3660;
+                break;
+            case 3738 ... 4000:
+                retval = 4000;
+                break;
+          }
     
           break;
         case 7:
-    
+          // Phrygian (Just Intonation)
+          switch(in_val){
+            case 0 ... 266:
+                retval = 0;
+                break;
+            case 267 ... 533:
+                retval = 150;
+                break;
+            case 534 ... 800:
+                retval = 490;
+                break;
+            case 801 ... 1067:
+                retval = 830;
+                break;
+            case 1068 ... 1334:
+                retval = 1170;
+                break;
+            case 1335 ... 1601:
+                retval = 1320;
+                break;
+            case 1602 ... 1868:
+                retval = 1660;
+                break;
+            case 1869 ... 2135:
+                retval = 2000;
+                break;
+            case 2136 ... 2402:
+                retval = 2150;
+                break;
+            case 2403 ... 2669:
+                retval = 2490;
+                break;
+            case 2670 ... 2936:
+                retval = 2830;
+                break;
+            case 2937 ... 3203:
+                retval = 3170;
+                break;
+            case 3204 ... 3470:
+                retval = 3320;
+                break;
+            case 3471 ... 3737:
+                retval = 3660;
+                break;
+            case 3738 ... 4000:
+                retval = 4000;
+                break;
+          }
+
           break;
         case 8:
-    
+          // Symmetric Octatonic Half Whole (Just Intonation)
+          switch(in_val){
+            case 0 ... 234:
+                retval = 0;
+                break;
+            case 235 ... 469:
+                retval = 150;
+                break;
+            case 470 ... 704:
+                retval = 490;
+                break;
+            case 705 ... 939:
+                retval = 680;
+                break;
+            case 940 ... 1174:
+                retval = 980;
+                break;
+            case 1175 ... 1409:
+                retval = 1170;
+                break;
+            case 1410 ... 1644:
+                retval = 1510;
+                break;
+            case 1645 ... 1879:
+                retval = 1660;
+                break;
+            case 1880 ... 2114:
+                retval = 2000;
+                break;
+            case 2115 ... 2349:
+                retval = 2150;
+                break;
+            case 2350 ... 2584:
+                retval = 2490;
+                break;
+            case 2585 ... 2819:
+                retval = 2680;
+                break;
+            case 2820 ... 3054:
+                retval = 2980;
+                break;
+            case 3055 ... 3289:
+                retval = 3170;
+                break;
+            case 3290 ... 3524:
+                retval = 3510;
+                break;
+            case 3525 ... 3759:
+                retval = 3660;
+                break;
+            case 3760 ... 4000:
+                retval = 4000;
+                break;
+          }
           break;
         case 9:
+          // Symmetric Octatonic Whole half (Just Intonation)
+          switch(in_val){
+            case 0 ... 234:
+                retval = 0;
+                break;
+            case 235 ... 469:
+                retval = 340;
+                break;
+            case 470 ... 704:
+                retval = 490;
+                break;
+            case 705 ... 939:
+                retval = 830;
+                break;
+            case 940 ... 1174:
+                retval = 980;
+                break;
+            case 1175 ... 1409:
+                retval = 1320;
+                break;
+            case 1410 ... 1644:
+                retval = 1510;
+                break;
+            case 1645 ... 1879:
+                retval = 1850;
+                break;
+            case 1880 ... 2114:
+                retval = 2000;
+                break;
+            case 2115 ... 2349:
+                retval = 2340;
+                break;
+            case 2350 ... 2584:
+                retval = 2490;
+                break;
+            case 2585 ... 2819:
+                retval = 2830;
+                break;
+            case 2820 ... 3054:
+                retval = 2980;
+                break;
+            case 3055 ... 3289:
+                retval = 3320;
+                break;
+            case 3290 ... 3524:
+                retval = 3510;
+                break;
+            case 3525 ... 3759:
+                retval = 3850;
+                break;
+            case 3760 ... 4000:
+                retval = 4000;
+                break;
+          }
     
           break;
         default:
@@ -397,79 +700,79 @@ int quantize_val(int in_val, int scale, int intonation){
         case 1:
           // Chromatic (Equal Temperament)
           switch(in_val){
-            case 0 ... 162:
+            case 0 ... 159:
                 retval = 0;
                 break;
-            case 163 ... 325:
+            case 160 ... 319:
                 retval = 168;
                 break;
-            case 326 ... 488:
+            case 320 ... 479:
                 retval = 333;
                 break;
-            case 489 ... 651:
+            case 480 ... 639:
                 retval = 500;
                 break;
-            case 652 ... 814:
+            case 640 ... 799:
                 retval = 667;
                 break;
-            case 815 ... 977:
+            case 800 ... 959:
                 retval = 833;
                 break;
-            case 978 ... 1140:
-                retval = 1000;
+            case 960 ... 1119:
+                retval = 980;
                 break;
-            case 1141 ... 1303:
+            case 1120 ... 1279:
                 retval = 1167;
                 break;
-            case 1304 ... 1466:
+            case 1280 ... 1439:
                 retval = 1333;
                 break;
-            case 1467 ... 1629:
+            case 1440 ... 1599:
                 retval = 1500;
                 break;
-            case 1630 ... 1792:
+            case 1600 ... 1759:
                 retval = 1667;
                 break;
-            case 1793 ... 1955:
+            case 1760 ... 1919:
                 retval = 1833;
                 break;
-            case 1956 ... 2118:
+            case 1920 ... 2079:
                 retval = 2000;
                 break;
-            case 2119 ... 2281:
+            case 2080 ... 2239:
                 retval = 2167;
                 break;
-            case 2282 ... 2444:
+            case 2240 ... 2399:
                 retval = 2333;
                 break;
-            case 2445 ... 2607:
+            case 2400 ... 2559:
                 retval = 2500;
                 break;
-            case 2608 ... 2770:
+            case 2560 ... 2719:
                 retval = 2667;
                 break;
-            case 2771 ... 2933:
+            case 2720 ... 2879:
                 retval = 2833;
                 break;
-            case 2934 ... 3096:
+            case 2880 ... 3039:
                 retval = 3000;
                 break;
-            case 3097 ... 3259:
+            case 3040 ... 3199:
                 retval = 3167;
                 break;
-            case 3260 ... 3422:
+            case 3200 ... 3359:
                 retval = 3333;
                 break;
-            case 3423 ... 3585:
+            case 3360 ... 3519:
                 retval = 3500;
                 break;
-            case 3586 ... 3748:
-                retval = 3667;
+            case 3520 ... 3679:
+                retval = 3677;
                 break;
-            case 3749 ... 3911:
+            case 3680 ... 3839:
                 retval = 3833;
                 break;
-            case 3912 ... 4096:
+            case 3840 ... 4000:
                 retval = 4000;
                 break;
           }
@@ -477,49 +780,49 @@ int quantize_val(int in_val, int scale, int intonation){
         case 2:
           // Major (Equal Temperament)
           switch(in_val){
-            case 0 ... 272:
+            case 0 ... 266:
                 retval = 0;
                 break;
-            case 273 ... 545:
+            case 267 ... 533:
                 retval = 333;
                 break;
-            case 546 ... 818:
+            case 534 ... 800:
                 retval = 667;
                 break;
-            case 819 ... 1091:
+            case 801 ... 1067:
                 retval = 833;
                 break;
-            case 1092 ... 1364:
+            case 1068 ... 1334:
                 retval = 1167;
                 break;
-            case 1365 ... 1637:
+            case 1335 ... 1601:
                 retval = 1500;
                 break;
-            case 1638 ... 1910:
+            case 1602 ... 1868:
                 retval = 1833;
                 break;
-            case 1911 ... 2183:
+            case 1869 ... 2135:
                 retval = 2000;
                 break;
-            case 2184 ... 2456:
+            case 2136 ... 2402:
                 retval = 2333;
                 break;
-            case 2457 ... 2729:
+            case 2403 ... 2669:
                 retval = 2667;
                 break;
-            case 2730 ... 3002:
+            case 2670 ... 2936:
                 retval = 2833;
                 break;
-            case 3003 ... 3275:
+            case 2937 ... 3203:
                 retval = 3167;
                 break;
-            case 3276 ... 3548:
+            case 3204 ... 3470:
                 retval = 3500;
                 break;
-            case 3549 ... 3821:
+            case 3471 ... 3737:
                 retval = 3833;
                 break;
-            case 3822 ... 4096:
+            case 3738 ... 4000:
                 retval = 4000;
                 break;
           }
@@ -528,59 +831,344 @@ int quantize_val(int in_val, int scale, int intonation){
         case 3:
           // Major Pentatonic (Equal Temperament)
           switch(in_val){
-            case 0 ... 371:
+            case 0 ... 363:
                 retval = 0;
                 break;
-            case 372 ... 743:
+            case 364 ... 727:
                 retval = 333;
                 break;
-            case 744 ... 1115:
+            case 728 ... 1091:
                 retval = 667;
                 break;
-            case 1116 ... 1487:
+            case 1092 ... 1455:
                 retval = 1167;
                 break;
-            case 1488 ... 1859:
+            case 1456 ... 1819:
                 retval = 1500;
                 break;
-            case 1860 ... 2231:
+            case 1820 ... 2183:
                 retval = 2000;
                 break;
-            case 2232 ... 2603:
+            case 2184 ... 2547:
                 retval = 2333;
                 break;
-            case 2604 ... 2975:
+            case 2548 ... 2911:
                 retval = 2667;
                 break;
-            case 2976 ... 3347:
+            case 2912 ... 3275:
                 retval = 3167;
                 break;
-            case 3348 ... 3719:
+            case 3276 ... 3639:
                 retval = 3500;
                 break;
-            case 3720 ... 4096:
+            case 3640 ... 4000:
                 retval = 4000;
                 break;
           }
 
           break;
         case 4:
-
+          // Minor Pentatonic (Equal Temperament)
+          switch(in_val){
+            case 0 ... 363:
+                retval = 0;
+                break;
+            case 364 ... 727:
+                retval = 500;
+                break;
+            case 728 ... 1091:
+                retval = 833;
+                break;
+            case 1092 ... 1455:
+                retval = 1167;
+                break;
+            case 1456 ... 1819:
+                retval = 1667;
+                break;
+            case 1820 ... 2183:
+                retval = 2000;
+                break;
+            case 2184 ... 2547:
+                retval = 2500;
+                break;
+            case 2548 ... 2911:
+                retval = 2833;
+                break;
+            case 2912 ... 3275:
+                retval = 3167;
+                break;
+            case 3276 ... 3639:
+                retval = 3667;
+                break;
+            case 3640 ... 4000:
+                retval = 4000;
+                break;
+          }
+        
           break;
         case 5:
-    
-          break;    
+          // Harmonic Minor (Equal Temperament)
+          switch(in_val){
+            case 0 ... 266:
+                retval = 0;
+                break;
+            case 267 ... 533:
+                retval = 333;
+                break;
+            case 534 ... 800:
+                retval = 500;
+                break;
+            case 801 ... 1067:
+                retval = 833;
+                break;
+            case 1068 ... 1334:
+                retval = 1167;
+                break;
+            case 1335 ... 1601:
+                retval = 1333;
+                break;
+            case 1602 ... 1868:
+                retval = 1833;
+                break;
+            case 1869 ... 2135:
+                retval = 2000;
+                break;
+            case 2136 ... 2402:
+                retval = 2333;
+                break;
+            case 2403 ... 2669:
+                retval = 2500;
+                break;
+            case 2670 ... 2936:
+                retval = 2833;
+                break;
+            case 2937 ... 3203:
+                retval = 3167;
+                break;
+            case 3204 ... 3470:
+                retval = 3333;
+                break;
+            case 3471 ... 3737:
+                retval = 3833;
+                break;
+            case 3738 ... 4000:
+                retval = 4000;
+                break;
+          }
+          break;
         case 6:
+          // Dorian (Equal Temperament)
+          switch(in_val){
+            case 0 ... 266:
+                retval = 0;
+                break;
+            case 267 ... 533:
+                retval = 333;
+                break;
+            case 534 ... 800:
+                retval = 500;
+                break;
+            case 801 ... 1067:
+                retval = 833;
+                break;
+            case 1068 ... 1334:
+                retval = 1167;
+                break;
+            case 1335 ... 1601:
+                retval = 1500;
+                break;
+            case 1602 ... 1868:
+                retval = 1667;
+                break;
+            case 1869 ... 2135:
+                retval = 2000;
+                break;
+            case 2136 ... 2402:
+                retval = 2333;
+                break;
+            case 2403 ... 2669:
+                retval = 2500;
+                break;
+            case 2670 ... 2936:
+                retval = 2833;
+                break;
+            case 2937 ... 3203:
+                retval = 3167;
+                break;
+            case 3204 ... 3470:
+                retval = 3400;
+                break;
+            case 3471 ... 3737:
+                retval = 3667;
+                break;
+            case 3738 ... 4000:
+                retval = 4000;
+                break;
+          }
     
           break;
         case 7:
-    
+          // Phrygian (Equal Temperament)
+          switch(in_val){
+            case 0 ... 266:
+                retval = 0;
+                break;
+            case 267 ... 533:
+                retval = 168;
+                break;
+            case 534 ... 800:
+                retval = 500;
+                break;
+            case 801 ... 1067:
+                retval = 833;
+                break;
+            case 1068 ... 1334:
+                retval = 1167;
+                break;
+            case 1335 ... 1601:
+                retval = 1333;
+                break;
+            case 1602 ... 1868:
+                retval = 1667;
+                break;
+            case 1869 ... 2135:
+                retval = 2000;
+                break;
+            case 2136 ... 2402:
+                retval = 2168;
+                break;
+            case 2403 ... 2669:
+                retval = 2500;
+                break;
+            case 2670 ... 2936:
+                retval = 2833;
+                break;
+            case 2937 ... 3203:
+                retval = 3167;
+                break;
+            case 3204 ... 3470:
+                retval = 3333;
+                break;
+            case 3471 ... 3737:
+                retval = 3667;
+                break;
+            case 3738 ... 4000:
+                retval = 4000;
+                break;
+          }
+
           break;
         case 8:
-    
+          // Symmetric Octatonic Half Whole (Equal Temperament)
+          switch(in_val){
+            case 0 ... 234:
+                retval = 0;
+                break;
+            case 235 ... 469:
+                retval = 168;
+                break;
+            case 470 ... 704:
+                retval = 500;
+                break;
+            case 705 ... 939:
+                retval = 667;
+                break;
+            case 940 ... 1174:
+                retval = 1000;
+                break;
+            case 1175 ... 1409:
+                retval = 1167;
+                break;
+            case 1410 ... 1644:
+                retval = 1500;
+                break;
+            case 1645 ... 1879:
+                retval = 1667;
+                break;
+            case 1880 ... 2114:
+                retval = 2000;
+                break;
+            case 2115 ... 2349:
+                retval = 2168;
+                break;
+            case 2350 ... 2584:
+                retval = 2500;
+                break;
+            case 2585 ... 2819:
+                retval = 2667;
+                break;
+            case 2820 ... 3054:
+                retval = 3000;
+                break;
+            case 3055 ... 3289:
+                retval = 3167;
+                break;
+            case 3290 ... 3524:
+                retval = 3400;
+                break;
+            case 3525 ... 3759:
+                retval = 3667;
+                break;
+            case 3760 ... 4000:
+                retval = 4000;
+                break;
+          }
           break;
         case 9:
-    
+          // Symmetric Octatonic Whole half (Equal Temperament)
+          switch(in_val){
+            case 0 ... 234:
+                retval = 0;
+                break;
+            case 235 ... 469:
+                retval = 333;
+                break;
+            case 470 ... 704:
+                retval = 500;
+                break;
+            case 705 ... 939:
+                retval = 833;
+                break;
+            case 940 ... 1174:
+                retval = 1000;
+                break;
+            case 1175 ... 1409:
+                retval = 1333;
+                break;
+            case 1410 ... 1644:
+                retval = 1500;
+                break;
+            case 1645 ... 1879:
+                retval = 1833;
+                break;
+            case 1880 ... 2114:
+                retval = 2000;
+                break;
+            case 2115 ... 2349:
+                retval = 2333;
+                break;
+            case 2350 ... 2584:
+                retval = 2500;
+                break;
+            case 2585 ... 2819:
+                retval = 2833;
+                break;
+            case 2820 ... 3054:
+                retval = 3000;
+                break;
+            case 3055 ... 3289:
+                retval = 3333;
+                break;
+            case 3290 ... 3524:
+                retval = 3500;
+                break;
+            case 3525 ... 3759:
+                retval = 3833;
+                break;
+            case 3760 ... 4000:
+                retval = 4000;
+                break;
+          }
           break;
         default:
             retval = in_val;  // default = don't quantize
@@ -589,6 +1177,7 @@ int quantize_val(int in_val, int scale, int intonation){
     
       break;
   }
+  log_msg("Inval: %d, retval = %d\n\r",in_val, retval);
   return retval;
 }
 
